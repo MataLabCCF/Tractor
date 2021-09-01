@@ -472,6 +472,3 @@ if __name__ == '__main__':
     covarDict = openCovar(args.covar, args.id)
     createRScript(args.output, args.statisticalModel, args.phenotype, args.id, args.kinship, covarDict, int(args.numAncestry), args.vcf, args.Rscript)
     callRunRegression(args.vcf, args.bcftools, args.Rscript, args.output, msp, covarDict, int(args.numAncestry), int(args.threads), args.delete)
-
-
-    

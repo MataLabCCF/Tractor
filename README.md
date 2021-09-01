@@ -65,6 +65,8 @@ Optional arguments:
                         Path for the Rscript with SeqArray and GMMAT installed (default Rscript)
 ```
 
+ #### Acknowledgment
+  
 Author: Thiago Peixoto Leal, PhD (thpeixotol@hotmail.com)
 
 Contributors: Misterious Posdoc from NIH, PhD

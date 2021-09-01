@@ -81,6 +81,6 @@ Optional arguments:
   
 Developer: Thiago Peixoto Leal, PhD (thpeixotol@hotmail.com)
 
-Contributors: Mateus henrique Gouveia, PhD
+Contributors: Mateus Henrique Gouveia, PhD
 
 Special thanks: Elizabeth Atkinson, PhD

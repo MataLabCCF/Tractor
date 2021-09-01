@@ -3,11 +3,16 @@ import gzip
 import os
 import time
 import argparse
-from multiprocessing import Pool
+import multiprocessing
 
+
+def init(queue):
+    global idx
+    idx = queue.get()
 
 def getchar():
     c = sys.stdin.read(1)
+
 
 
 class MSP:
@@ -99,15 +104,14 @@ def openMSP(mspFile):
 
     obj = MSP()
 
-    numLine = 1
+    headerRead = False
     for line in file:
-
-        if numLine == 1:
-            pass
-        elif numLine == 2:
-            header = line.strip().split('\t')
-            for i in range(6, len(header), 2):
-                obj.addIndividual(header[i])
+        if not headerRead:
+            if line[0:3] == '#ch':
+                header = line.strip().split('\t')
+                for i in range(6, len(header), 2):
+                    obj.addIndividual(header[i])
+                headerRead = True
         else:
             split = line.strip().split('\t')
             for i in range(6, len(split), 2):
@@ -115,7 +119,6 @@ def openMSP(mspFile):
                 obj.addAncestryHaplotype(header[i], "B", split[i + 1])
 
             obj.addInfoAboutWindow(split[0], split[1], split[2])
-        numLine = numLine + 1
     return obj
 
 
@@ -210,14 +213,40 @@ def resetList(haplotype, dosage):
         dosage[i] = 0
     return haplotype, dosage
 
-def runRegression(VCF, id, bcftools, Rscript, outputPrefix, msp, covarDict, numAncestry):
-    extractedVCF = f'{outputPrefix}_Extracted_{id}.vcf.gz'
+def runRegression(args):
+    (VCF, id, bcftools, Rscript, outputPrefix, msp, covarDict, numAncestry, gdsName) = args
+    global idx
+    extractedVCF = f'{outputPrefix}_Extracted_{id.replace(":", "_")}.vcf.gz'
     os.system(f"{bcftools} view -r {id} -Oz -o {extractedVCF} {VCF}")
     covarFile, SNP = prepareCovar(extractedVCF, msp, covarDict, outputPrefix, numAncestry)
-    os.system(f'{Rscript} {outputPrefix}_script.R {extractedVCF} {outputPrefix} {covarFile} {SNP}')
+    #gdsName = convertToGDS(extractedVCF, Rscript, outputPrefix+id.replace(":", "_"))
+    gdsName = gdsName.replace('IDTOPOOL', f'{idx}')
+    outputWald = f'{outputPrefix}_Wald_{SNP.replace(":", "_")}'
+    os.system(f'{Rscript} {outputPrefix}_script.R {extractedVCF} {outputWald} {covarFile} {SNP} {gdsName}')
+    #os.system(f'rm {covarFile} {extractedVCF}')
 
-def callRunRegression(vcfFile, bcftools, Rscript, outputPrefix, msp, covarDict, numAncestry):
-    SNPs = []
+
+def convertToGDS(vcfFile, Rscript, outName, numProcess):
+    script = open(f'{outName}_convertGDS.R', 'w')
+    script.write(f'library(GMMAT)\n'
+                 f'library(SeqArray)\n'
+
+                 f'gdsName= \"{outName}_GDS_IDTOPOOL.gds\"\n'
+
+                 f'SeqArray::seqVCF2GDS(\"{vcfFile}\", gdsName, parallel={numProcess})\n'
+                 )
+    script.close()
+    os.system(f'{Rscript} {outName}_convertGDS.R')
+    return (f"{outName}_GDS_IDTOPOOL.gds")
+
+def callRunRegression(vcfFile, bcftools, Rscript, outputPrefix, msp, covarDict, numAncestry, numProcess):
+    params = []
+
+    print("Creating the GDS\n")
+    startTime = time.time()
+    gdsName = convertToGDS(vcfFile, Rscript, outputPrefix, numProcess)
+    endTime = time.time()
+    print(f"GDS created ({endTime-startTime} s)")
 
     decode = False
     if vcfFile[-2:] == "gz":
@@ -236,15 +265,53 @@ def callRunRegression(vcfFile, bcftools, Rscript, outputPrefix, msp, covarDict, 
                 header = False
         else:
             data = line.strip().split()
-            SNPs.append(f'{data[0]}:{data[1]}')
+            params.append([vcfFile, f'{data[0]}:{data[1]}', bcftools, Rscript, outputPrefix, msp, covarDict, numAncestry, gdsName ])
 
-    for id in SNPs:
-        print(f'Running regression for SNP {id}')
-        runRegression(vcfFile, id, bcftools, Rscript, outputPrefix, msp, covarDict, numAncestry)
-        finish('check')
+    #====================================================================================================
+    #Pool to save time
+    manager = multiprocessing.Manager()
+    poolIDs = manager.Queue()
+    for proc in range(numProcess):
+        os.system(f"cp {gdsName} {gdsName.replace('IDTOPOOL', f'{proc}')}")
+        poolIDs.put(proc)
 
 
-def createRScript(outputPrefix, statisticalModel, phenotype, id, kinship, covarDict, numAncestry):
+    pool = multiprocessing.Pool(numProcess, init, (poolIDs,))
+    pool.map(runRegression, params)
+
+    #======================================================================================================
+    finalFile = open(f'{outputPrefix}_AllWald.txt', 'w')
+    print(f'Merging all Wald files ({outputPrefix}_AllWald.txt)')
+
+    finalFile.write("CHR\tPOS\tREF\tALT\tN\tAF\tBETA\tSE\tPVAL\tconverged\n")
+
+    #Reseting file
+    file.seek(0)
+    header = True
+    for line in file:
+        if decode:
+            line = line.decode("utf-8")
+
+        if header:
+            if line[0:6] == "#CHROM":
+                header = False
+        else:
+            data = line.strip().split()
+            SNP = data[2]
+
+            fileWaldName = f'{outputPrefix}_Wald_{SNP.replace(":", "_")}'
+            fileWald = open(fileWaldName)
+            line = fileWald.read() #Header
+            for line in fileWald:
+                split = line.strip().split()
+                fileWald.write(split[1].replace('\"', ""))
+                for i in range(2, len(split)):
+                    split[i].replace('\"', "")
+                    fileWald.write(f'\t{split[i]}')
+                fileWald.write('\n')
+    finalFile.close()
+
+def createRScript(outputPrefix, statisticalModel, phenotype, id, kinship, covarDict, numAncestry, vcfFile, Rscript):
     script = open(f'{outputPrefix}_script.R', 'w')
     print(f"Creating the R script ({outputPrefix}_script.R) ... ", end = "")
     if not statisticalModel:
@@ -267,51 +334,35 @@ def createRScript(outputPrefix, statisticalModel, phenotype, id, kinship, covarD
         script.write(f'library(GMMAT)\n'
                      f'library(SeqArray)\n'
                      f'options <- commandArgs(trailingOnly = TRUE)\n'
-                     f'vcfFile <- options[0]\n'
-                     f'outName <- options[1]\n'
-                     f'covarFile <- options[2]\n'
-                     f'SNP <- options[3]\n'
-                     
-                     f'gdsName= paste(outName, "_GDS", sep = \"\")\n'
-                     
-                     f'SeqArray::seqVCF2GDS(vcfFile, gdsName)\n'
-                     
+                     f'vcfFile <- options[1]\n'
+                     f'outName <- options[2]\n'
+                     f'covarFile <- options[3]\n'
+                     f'SNP <- options[4]\n'
+                     f'GDS <- options[5]\n'
+
                      f'covar <- read.table(covarFile, header = T, sep = "\\t")\n'
-                     
-                     f'kinship <- as.matrix(read.table({kinship}, check.names=FALSE))\n'
-                     
-                     f'model <- glmmkin({phenotype} ~ {model} , data = covar, kins = kinship, '
-                     f'id = \"ID\", family = binomial(link = \"logit\")) \n'
-                     
-                     f'Wald <- glmm.wald(model, data = covar, kins = kinship, id = \"ID\", infile = gdsName, '
-                     f'snps = SNP, is.dosage = T)\n'
-                     f'write.table(Wald, paste(outName,SNP, sep = "_"), sep="\t")\n')
-        script.close()
+                     f'covar$ID <- as.factor(covar$ID)\n'
+                     f'covar${phenotype} <- as.factor(covar${phenotype})\n')
+
+        if kinship:
+            script.write(f'kinship <- as.matrix(read.table("{kinship}", check.names=FALSE))\n'             
+                         f'Wald <- glmm.wald({phenotype} ~ {model}, data = covar, kins = kinship, id = \"ID\", infile = GDS, '
+                         f'snps = SNP, is.dosage = T)\n')
+
+        else:
+            script.write(f'Wald <- glmm.wald({phenotype} ~ {model}, data = covar, id = \"ID\", infile = GDS, '
+                         f'snps = SNP, is.dosage = T)\n')
     else:
-        script.write(f'library(GMMAT)\n'
-                     f'library(SeqArray)\n'
-                     f'options <- commandArgs(trailingOnly = TRUE)\n'
-                     f'vcfFile <- options[0]\n'
-                     f'outName <- options[1]\n'
-                     f'covarFile <- options[2]\n'
-                     f'SNP <- options[3]\n'
+        if kinship:
+            script.write(f'kinship <- as.matrix(read.table("{kinship}", check.names=FALSE))\n'
+                         f'Wald <- glmm.wald({phenotype} ~ {statisticalModel}, data = covar, kins = kinship, id = \"ID\", infile = GDS, '
+                         f'snps = SNP, is.dosage = T)\n')
+        else:
+            script.write(f'Wald <- glmm.wald({phenotype} ~ {statisticalModel}, data = covar, id = \"ID\", infile = GDS, '
+                         f'snps = SNP, is.dosage = T)\n')
 
-                     f'gdsName= paste(outName, "_GDS", sep = \"\")\n'
-
-                     f'SeqArray::seqVCF2GDS(vcfFile, gdsName)\n'
-
-                     f'covar <- read.table(covarFile, header = T, sep = "\\t")\n'
-
-                     f'kinship <- as.matrix(read.table({kinship}, check.names=FALSE))\n'
-
-                     f'model <- glmmkin({phenotype} ~ {statisticalModel} , data = covar, kins = kinship, '
-                     f'id = \"ID\", family = binomial(link = \"logit\")) \n'
-
-                     f'Wald <- glmm.wald(model, data = covar, kins = kinship, id = \"ID\", infile = gdsName, '
-                     f'snps = SNP, is.dosage = T)\n'
-                     f'write.table(Wald, paste(outName,SNP, sep = "_"), sep="\t")\n')
-        script.close()
-    print('Done')
+    script.write(f'write.table(Wald, outName, sep="\t")\n')
+    script.close()
 
 
 
@@ -351,6 +402,7 @@ def prepareCovar(vcfFile, msp, covar, outputPrefix, numAncestry):
 
                 ind = headerLine[i]
                 anc1, anc2 = msp.getAncPos(ind, pos)
+                numHaplotype, dosageByAncestry = resetList(numHaplotype, dosageByAncestry)
 
                 GT = getGT(data[i])
 
@@ -386,10 +438,12 @@ if __name__ == '__main__':
     required.add_argument('-c', '--covar', help='Table with the covariatives', required=True)
     required.add_argument('-i', '--id', help='Name of the column with individual ID on covar file', required=True)
     required.add_argument('-p', '--phenotype', help='Name of the column with phenotype', required=True)
-    required.add_argument('-k', '--kinship', help='File with kinship coefficientx', required=True)
+
     required.add_argument('-o', '--output', help='Output file name', required=True)
 
     optional = parser.add_argument_group("Optional arguments")
+
+    optional.add_argument('-k', '--kinship', help='File with kinship coefficient', required=False, default = '')
     optional.add_argument('-s', '--statisticalModel',
                           help='Statistical Model. If not provided, we will include all covariatives', required=False,
                           default='')
@@ -397,13 +451,13 @@ if __name__ == '__main__':
     optional.add_argument('-b', '--bcftools', help='Path for the BCFTOOLS (default bcftools)',
                           required=False, default='bcftools')
     optional.add_argument('-R', '--Rscript', help='Path for the Rscript with SeqArray and GMMAT installed (default Rscript)',
-                          required=False, default='bcftools')
+                          required=False, default='Rscript')
 
     args = parser.parse_args()
     msp = openMSP(args.msp)
     covarDict = openCovar(args.covar, args.id)
-    createRScript(args.output, args.statisticalModel, args.phenotype, args.id, args.kinship, covarDict, int(args.numAncestry))
-    callRunRegression(args.vcf, args.bcftools, args.Rscript, args.output, msp, covarDict, int(args.numAncestry))
+    createRScript(args.output, args.statisticalModel, args.phenotype, args.id, args.kinship, covarDict, int(args.numAncestry), args.vcf, args.Rscript)
+    callRunRegression(args.vcf, args.bcftools, args.Rscript, args.output, msp, covarDict, int(args.numAncestry), int(args.threads))
 
 
     

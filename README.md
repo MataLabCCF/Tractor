@@ -74,6 +74,7 @@ Optional arguments:
                         Path for the BCFTOOLS (default bcftools)
   -R RSCRIPT, --Rscript RSCRIPT
                         Path for the Rscript with SeqArray and GMMAT installed (default Rscript)
+  -d, --delete          Set to remove temporary files (default = False)
 ```
 
  #### Acknowledgment

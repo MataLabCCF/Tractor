@@ -67,6 +67,6 @@ Optional arguments:
 
  #### Acknowledgment
   
-Author: Thiago Peixoto Leal, PhD (thpeixotol@hotmail.com)
+Developer: Thiago Peixoto Leal, PhD (thpeixotol@hotmail.com)
 
 Contributors: Misterious Posdoc from NIH, PhD

@@ -214,14 +214,14 @@ def resetList(haplotype, dosage):
     return haplotype, dosage
 
 def runRegression(args):
-    (VCF, id, bcftools, Rscript, outputPrefix, msp, covarDict, numAncestry, gdsName, delete) = args
+    (VCF, chrPos, id, bcftools, Rscript, outputPrefix, msp, covarDict, numAncestry, gdsName, delete) = args
     global idx
-    extractedVCF = f'{outputPrefix}_Extracted_{id.replace(":", "_")}.vcf.gz'
-    os.system(f"{bcftools} view -r {id} -Oz -o {extractedVCF} {VCF}")
-    covarFile, SNP = prepareCovar(extractedVCF, msp, covarDict, outputPrefix, numAncestry)
+    extractedVCF = f'{outputPrefix}_Extracted_{chrPos}_Worker{idx}.vcf.gz'
+    os.system(f"{bcftools} view -r {chrPos} -Oz -o {extractedVCF} {VCF}")
+    covarFile, SNP = prepareCovar(extractedVCF, msp, covarDict, outputPrefix, numAncestry, id)
     gdsName = gdsName.replace('IDTOPOOL', f'{idx}')
     outputWald = f'{outputPrefix}_Wald_{SNP.replace(":", "_")}'
-    os.system(f'{Rscript} {outputPrefix}_script.R {outputWald} {covarFile} {SNP} {gdsName}')
+    os.system(f'{Rscript} {outputPrefix}_script.R {outputWald} {covarFile} {id} {gdsName}')
     if delete:
         os.system(f'rm {extractedVCF} {covarFile}')
 
@@ -266,7 +266,7 @@ def callRunRegression(vcfFile, bcftools, Rscript, outputPrefix, msp, covarDict, 
                 header = False
         else:
             data = line.strip().split()
-            params.append([vcfFile, f'{data[0]}:{data[1]}', bcftools, Rscript, outputPrefix, msp, covarDict, numAncestry, gdsName, delete])
+            params.append([vcfFile, f'{data[0]}:{data[1]}',f'{data[2]}', bcftools, Rscript, outputPrefix, msp, covarDict, numAncestry, gdsName, delete])
 
     #====================================================================================================
     #Pool to save time
@@ -318,6 +318,20 @@ def callRunRegression(vcfFile, bcftools, Rscript, outputPrefix, msp, covarDict, 
 def createRScript(outputPrefix, statisticalModel, phenotype, id, kinship, covarDict, numAncestry, vcfFile, Rscript):
     script = open(f'{outputPrefix}_script.R', 'w')
     print(f"Creating the R script ({outputPrefix}_script.R) ... ", end = "")
+
+    script.write(f'library(GMMAT)\n'
+                 f'library(SeqArray)\n'
+                 f'options <- commandArgs(trailingOnly = TRUE)\n'
+                 f'outName <- options[1]\n'
+                 f'covarFile <- options[2]\n'
+                 f'SNP <- options[3]\n'
+                 f'GDS <- options[4]\n'
+
+                 f'covar <- read.table(covarFile, header = T, sep = "\\t")\n'
+                 f'covar$ID <- as.factor(covar$ID)\n'
+                 f'covar${phenotype} <- as.factor(covar${phenotype})\n')
+
+
     if not statisticalModel:
         first = True
         model = ""
@@ -334,18 +348,6 @@ def createRScript(outputPrefix, statisticalModel, phenotype, id, kinship, covarD
 
         for i in range(numAncestry - 1):
             model = model + f' + numHap{i}'
-
-        script.write(f'library(GMMAT)\n'
-                     f'library(SeqArray)\n'
-                     f'options <- commandArgs(trailingOnly = TRUE)\n'
-                     f'outName <- options[1]\n'
-                     f'covarFile <- options[2]\n'
-                     f'SNP <- options[3]\n'
-                     f'GDS <- options[4]\n'
-
-                     f'covar <- read.table(covarFile, header = T, sep = "\\t")\n'
-                     f'covar$ID <- as.factor(covar$ID)\n'
-                     f'covar${phenotype} <- as.factor(covar${phenotype})\n')
 
         if kinship:
             script.write(f'kinship <- as.matrix(read.table("{kinship}", check.names=FALSE))\n'             
@@ -369,7 +371,7 @@ def createRScript(outputPrefix, statisticalModel, phenotype, id, kinship, covarD
 
 
 
-def prepareCovar(vcfFile, msp, covar, outputPrefix, numAncestry):
+def prepareCovar(vcfFile, msp, covar, outputPrefix, numAncestry, targetSNP):
     decode = False
     if vcfFile[-2:] == "gz":
         file = gzip.open(vcfFile, 'r')
@@ -398,38 +400,39 @@ def prepareCovar(vcfFile, msp, covar, outputPrefix, numAncestry):
             pos = data[1]
             SNP = data[2]
 
-            covarFile = open(f'{outputPrefix}_covar_{SNP.replace(":", "_")}.txt', 'w')
-            covarFile.write(covarHeader)
-            for i in range(9, len(data)):
-                outLine = ''
+            if SNP == targetSNP:
+                covarFile = open(f'{outputPrefix}_covar_{SNP.replace(":", "_")}.txt', 'w')
+                covarFile.write(covarHeader)
+                for i in range(9, len(data)):
+                    outLine = ''
 
-                ind = headerLine[i]
-                anc1, anc2 = msp.getAncPos(ind, pos)
-                numHaplotype, dosageByAncestry = resetList(numHaplotype, dosageByAncestry)
+                    ind = headerLine[i]
+                    anc1, anc2 = msp.getAncPos(ind, pos)
+                    numHaplotype, dosageByAncestry = resetList(numHaplotype, dosageByAncestry)
 
-                GT = getGT(data[i])
+                    GT = getGT(data[i])
 
-                dosageByAncestry[anc1] = dosageByAncestry[anc1] + int(GT[0])
-                dosageByAncestry[anc2] = dosageByAncestry[anc2] + int(GT[1])
+                    dosageByAncestry[anc1] = dosageByAncestry[anc1] + int(GT[0])
+                    dosageByAncestry[anc2] = dosageByAncestry[anc2] + int(GT[1])
 
-                numHaplotype[anc1] = numHaplotype[anc1] + 1
-                numHaplotype[anc2] = numHaplotype[anc2] + 1
+                    numHaplotype[anc1] = numHaplotype[anc1] + 1
+                    numHaplotype[anc2] = numHaplotype[anc2] + 1
 
-                for field in order:
-                    if(field == "ID"):
-                        outLine = ind
-                    else:
-                        outLine = f'{outLine}\t{covarDict[ind][field]}'
+                    for field in order:
+                        if(field == "ID"):
+                            outLine = ind
+                        else:
+                            outLine = f'{outLine}\t{covarDict[ind][field]}'
 
-                for j in range(numAncestry):
-                    outLine = f'{outLine}\t{dosageByAncestry[j]}'
+                    for j in range(numAncestry):
+                        outLine = f'{outLine}\t{dosageByAncestry[j]}'
 
-                for j in range(numAncestry-1):
-                    outLine = f'{outLine}\t{numHaplotype[j]}'
+                    for j in range(numAncestry-1):
+                        outLine = f'{outLine}\t{numHaplotype[j]}'
 
-                covarFile.write(f'{outLine}\n')
-            covarFile.close()
-    return f'{outputPrefix}_covar_{SNP.replace(":", "_")}.txt', SNP
+                    covarFile.write(f'{outLine}\n')
+                covarFile.close()
+                return f'{outputPrefix}_covar_{SNP.replace(":", "_")}.txt', SNP
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Tractor without Hail')

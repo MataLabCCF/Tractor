@@ -214,16 +214,17 @@ def resetList(haplotype, dosage):
     return haplotype, dosage
 
 def runRegression(args):
-    (VCF, id, bcftools, Rscript, outputPrefix, msp, covarDict, numAncestry, gdsName) = args
+    (VCF, id, bcftools, Rscript, outputPrefix, msp, covarDict, numAncestry, gdsName, delete) = args
     global idx
     extractedVCF = f'{outputPrefix}_Extracted_{id.replace(":", "_")}.vcf.gz'
     os.system(f"{bcftools} view -r {id} -Oz -o {extractedVCF} {VCF}")
     covarFile, SNP = prepareCovar(extractedVCF, msp, covarDict, outputPrefix, numAncestry)
-    #gdsName = convertToGDS(extractedVCF, Rscript, outputPrefix+id.replace(":", "_"))
     gdsName = gdsName.replace('IDTOPOOL', f'{idx}')
     outputWald = f'{outputPrefix}_Wald_{SNP.replace(":", "_")}'
-    os.system(f'{Rscript} {outputPrefix}_script.R {extractedVCF} {outputWald} {covarFile} {SNP} {gdsName}')
-    #os.system(f'rm {covarFile} {extractedVCF}')
+    os.system(f'{Rscript} {outputPrefix}_script.R {outputWald} {covarFile} {SNP} {gdsName}')
+    if delete:
+        os.system(f'rm {extractedVCF} {covarFile}')
+
 
 
 def convertToGDS(vcfFile, Rscript, outName, numProcess):
@@ -239,7 +240,7 @@ def convertToGDS(vcfFile, Rscript, outName, numProcess):
     os.system(f'{Rscript} {outName}_convertGDS.R')
     return (f"{outName}_GDS_IDTOPOOL.gds")
 
-def callRunRegression(vcfFile, bcftools, Rscript, outputPrefix, msp, covarDict, numAncestry, numProcess):
+def callRunRegression(vcfFile, bcftools, Rscript, outputPrefix, msp, covarDict, numAncestry, numProcess, delete):
     params = []
 
     print("Creating the GDS\n")
@@ -265,7 +266,7 @@ def callRunRegression(vcfFile, bcftools, Rscript, outputPrefix, msp, covarDict, 
                 header = False
         else:
             data = line.strip().split()
-            params.append([vcfFile, f'{data[0]}:{data[1]}', bcftools, Rscript, outputPrefix, msp, covarDict, numAncestry, gdsName ])
+            params.append([vcfFile, f'{data[0]}:{data[1]}', bcftools, Rscript, outputPrefix, msp, covarDict, numAncestry, gdsName, delete])
 
     #====================================================================================================
     #Pool to save time
@@ -283,7 +284,7 @@ def callRunRegression(vcfFile, bcftools, Rscript, outputPrefix, msp, covarDict, 
     finalFile = open(f'{outputPrefix}_AllWald.txt', 'w')
     print(f'Merging all Wald files ({outputPrefix}_AllWald.txt)')
 
-    finalFile.write("CHR\tPOS\tREF\tALT\tN\tAF\tBETA\tSE\tPVAL\tconverged\n")
+    finalFile.write("SNP\tCHR\tPOS\tREF\tALT\tN\tAF\tBETA\tSE\tPVAL\tconverged\n")
 
     #Reseting file
     file.seek(0)
@@ -309,6 +310,9 @@ def callRunRegression(vcfFile, bcftools, Rscript, outputPrefix, msp, covarDict, 
                     split[i].replace('\"', "")
                     fileWald.write(f'\t{split[i]}')
                 fileWald.write('\n')
+            fileWald.close()
+            #if delete:
+            #    os.system(f'rm {outputPrefix}_Wald_{SNP.replace(":", "_")}')
     finalFile.close()
 
 def createRScript(outputPrefix, statisticalModel, phenotype, id, kinship, covarDict, numAncestry, vcfFile, Rscript):
@@ -334,11 +338,10 @@ def createRScript(outputPrefix, statisticalModel, phenotype, id, kinship, covarD
         script.write(f'library(GMMAT)\n'
                      f'library(SeqArray)\n'
                      f'options <- commandArgs(trailingOnly = TRUE)\n'
-                     f'vcfFile <- options[1]\n'
-                     f'outName <- options[2]\n'
-                     f'covarFile <- options[3]\n'
-                     f'SNP <- options[4]\n'
-                     f'GDS <- options[5]\n'
+                     f'outName <- options[1]\n'
+                     f'covarFile <- options[2]\n'
+                     f'SNP <- options[3]\n'
+                     f'GDS <- options[4]\n'
 
                      f'covar <- read.table(covarFile, header = T, sep = "\\t")\n'
                      f'covar$ID <- as.factor(covar$ID)\n'
@@ -385,9 +388,9 @@ def prepareCovar(vcfFile, msp, covar, outputPrefix, numAncestry):
 
         if header:
             if line[0:6] == "#CHROM":
-                print("Check the individuals in all files")
+                #print("Check the individuals in all files")
                 headerLine = checkIndividuals(line, msp, covar)
-                print("Done")
+                #print("Done")
                 header = False
         else:
             data = line.strip().split()
@@ -395,7 +398,7 @@ def prepareCovar(vcfFile, msp, covar, outputPrefix, numAncestry):
             pos = data[1]
             SNP = data[2]
 
-            covarFile = open(f'{outputPrefix}_covar_{chr}_{pos}.txt', 'w')
+            covarFile = open(f'{outputPrefix}_covar_{SNP.replace(":", "_")}.txt', 'w')
             covarFile.write(covarHeader)
             for i in range(9, len(data)):
                 outLine = ''
@@ -426,7 +429,7 @@ def prepareCovar(vcfFile, msp, covar, outputPrefix, numAncestry):
 
                 covarFile.write(f'{outLine}\n')
             covarFile.close()
-    return f'{outputPrefix}_covar_{chr}_{pos}.txt', SNP
+    return f'{outputPrefix}_covar_{SNP.replace(":", "_")}.txt', SNP
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Tractor without Hail')
@@ -439,7 +442,8 @@ if __name__ == '__main__':
     required.add_argument('-i', '--id', help='Name of the column with individual ID on covar file', required=True)
     required.add_argument('-p', '--phenotype', help='Name of the column with phenotype', required=True)
 
-    required.add_argument('-o', '--output', help='Output file name', required=True)
+    required.add_argument('-o', '--output', help='Output prefix ', required=True)
+    required.add_argument('-f', '--folder', help='Folder to store the results ', required=True)
 
     optional = parser.add_argument_group("Optional arguments")
 
@@ -452,12 +456,19 @@ if __name__ == '__main__':
                           required=False, default='bcftools')
     optional.add_argument('-R', '--Rscript', help='Path for the Rscript with SeqArray and GMMAT installed (default Rscript)',
                           required=False, default='Rscript')
+    optional.add_argument('-d', '--delete',
+                          help='Set to remove temporary files (default = False)',
+                          required=False, default=False, action='store_true')
 
     args = parser.parse_args()
     msp = openMSP(args.msp)
+
+    os.system(f'mkdir {args.folder}')
+    args.output = args.folder+'/'+args.output
+
     covarDict = openCovar(args.covar, args.id)
     createRScript(args.output, args.statisticalModel, args.phenotype, args.id, args.kinship, covarDict, int(args.numAncestry), args.vcf, args.Rscript)
-    callRunRegression(args.vcf, args.bcftools, args.Rscript, args.output, msp, covarDict, int(args.numAncestry), int(args.threads))
+    callRunRegression(args.vcf, args.bcftools, args.Rscript, args.output, msp, covarDict, int(args.numAncestry), int(args.threads), args.delete)
 
 
     

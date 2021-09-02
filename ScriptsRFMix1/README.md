@@ -4,7 +4,7 @@ In this folder I describe the scripts implemented to perform the RFMix1 from a V
 
 ## Step 1: Creating sets of individuals 
 
-The RFMix1 is time and memory demanding. To run a file with more than 1500 individuals you need more than 500 GB of RAM. With this we have two options:
+The RFMix1 is time and memory demanding. To run a file with more than 1500 individuals to chromosome 1 you need more than 500 GB of RAM. With this we have two options:
 
 - Buy a new computer
 - Split the data in sets

@@ -1,4 +1,4 @@
-# RFScripts - Scripts to run RFMix 
+# RFScripts - Scripts to run RFMix1 
 
 In this folder I describe the scripts implemented to perform the RFMix1 from a VCF File with admixed and references (only biallelics and commons SNPs)
 

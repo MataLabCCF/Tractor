@@ -32,8 +32,7 @@ NA20832 EUR
 
 ## Step 2: The bot 
 
-We ran this pipeline in a HPC with Slurm and our administrator allowed to run 28 jobs per time (with 24 processor each and 90 GB of RAM each). To avoid lose time, we created a 
-bot that looks the queue each 1 second and, if there is less jobs than 26, create the bash file and submit to the queue. I am providing this script because they have all steps:
+We ran this pipeline in a HPC with Slurm and our administrator allowed to run 28 jobs per time (with 24 processor each and 90 GB of RAM each). To avoid wasting time with an idle queue, we created a bot that looks the queue each 1 second and, if there is less jobs than 26, create the bash file and submit to the queue. I am providing this script because they have all steps:
 
 - Split VCF file
 - Convert VCF to RFMix1 input

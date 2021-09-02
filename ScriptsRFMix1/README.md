@@ -55,6 +55,6 @@ python3.8 RFMix1ToRFMix2.py -v <Original VCF, with all individuals> -s <prefix o
   
 Developer: Thiago Peixoto Leal, PhD (thpeixotol@hotmail.com)
 
-Contributors: Victor Borda, PhD
+Contributors: Victor Borda, PhD - University of Maryland
 
 Special Thanks: Michael Weiner, the HPC Administrator

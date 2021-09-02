@@ -286,8 +286,13 @@ def callRunRegression(vcfFile, bcftools, Rscript, outputPrefix, msp, covarDict, 
 
     finalFile.write("SNP\tCHR\tPOS\tREF\tALT\tN\tAF\tBETA\tSE\tPVAL\tconverged\n")
 
-    #Reseting file
-    file.seek(0)
+    decode = False
+    if vcfFile[-2:] == "gz":
+        file = gzip.open(vcfFile, 'r')
+        decode = True
+    elif vcfFile[-3:] == "vcf":
+        file = open(vcfFile)
+
     header = True
     for line in file:
         if decode:
@@ -302,14 +307,18 @@ def callRunRegression(vcfFile, bcftools, Rscript, outputPrefix, msp, covarDict, 
 
             fileWaldName = f'{outputPrefix}_Wald_{SNP.replace(":", "_")}'
             fileWald = open(fileWaldName)
-            line = fileWald.read() #Header
+
+            header = True
             for line in fileWald:
-                split = line.strip().split()
-                fileWald.write(split[1].replace('\"', ""))
-                for i in range(2, len(split)):
-                    split[i].replace('\"', "")
-                    fileWald.write(f'\t{split[i]}')
-                fileWald.write('\n')
+                if header:
+                    header = False
+                else:
+                    split = line.strip().split()
+                    finalFile.write(split[1].replace('\"', ""))
+                    for i in range(2, len(split)):
+                        withoutQuotes=split[i].strip().replace("\"", "")
+                        finalFile.write(f'\t{withoutQuotes}')
+                    finalFile.write('\n')
             fileWald.close()
             #if delete:
             #    os.system(f'rm {outputPrefix}_Wald_{SNP.replace(":", "_")}')

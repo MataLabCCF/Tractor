@@ -16,7 +16,7 @@ for i in range(21, 0, -1):
                 fileSlurm = open(f'slurmSet_chr{i}_{j}.pbs', 'w')
                 fileSlurm.write('#!/bin/sh\n')
                 fileSlurm.write('#SBATCH --mail-type=END,FAIL\n')
-                fileSlurm.write('#SBATCH --mail-user=PEIXOTT@ccf.org\n')
+                fileSlurm.write('#SBATCH --mail-user=ABC@DEF.GHI\n')
                 fileSlurm.write('#SBATCH -n 24\n')
                 fileSlurm.write('#SBATCH --mem 90000\n')
         
@@ -30,12 +30,12 @@ for i in range(21, 0, -1):
                 fileSlurm.write('module load bcftools/1.9\n')
                 fileSlurm.write('module load plink/1.90\n')
         
-                fileSlurm.write(f'mkdir /home/peixott/beegfs/RFMix/inRF_chr{i}\n')
-                fileSlurm.write(f'bcftools view -S /home/peixott/beegfs/RFMix/split{j} -Oz -o /home/peixott/beegfs/RFMix/inRF_chr{i}/Set{j}_chr{i}.vcf.gz /home/peixott/beegfs/RFMix/data{i}/Merged{i}.vcf.gz \n')
-                fileSlurm.write(f'python3.8 /home/peixott/beegfs/RFMix/VCF2RFMix1.py --vcf /home/peixott/beegfs/RFMix/inRF_chr{i}/Set{j}_chr{i}.vcf.gz -c /home/peixott/beegfs/3A/TestAllRun/RFMix/ListParentalMapping.txt -m /home/peixott/beegfs/RFMix/chr{i}.b38.gmap -o /home/peixott/beegfs/RFMix/inRF_chr{i}/RFMi_chr{i}_set{j} -C {i}\n')
+                fileSlurm.write(f'mkdir /home/USER/RFMix/inRF_chr{i}\n')
+                fileSlurm.write(f'bcftools view -S /home/USER/RFMix/split{j} -Oz -o /home/USER/RFMix/inRF_chr{i}/Set{j}_chr{i}.vcf.gz /home/USER/RFMix/data{i}/Merged{i}.vcf.gz \n')
+                fileSlurm.write(f'python3.8 /home/USER/RFMix/VCF2RFMix1.py --vcf /home/USER/RFMix/inRF_chr{i}/Set{j}_chr{i}.vcf.gz -c /home/USER/3A/TestAllRun/RFMix/ListParentalMapping.txt -m /home/USER/RFMix/chr{i}.b38.gmap -o /home/USER/RFMix/inRF_chr{i}/RFMi_chr{i}_set{j} -C {i}\n')
         
-                fileSlurm.write(f'mkdir /home/peixott/beegfs/RFMix/outRF_chr{i}\n')
-                fileSlurm.write(f'python2.7 /cm/shared/apps/RFMix/1.5.4/RunRFMix.py PopPhased /home/peixott/beegfs/RFMix/inRF_chr{i}/RFMi_chr{i}_set{j}_alleles /home/peixott/beegfs/RFMix/inRF_chr{i}/RFMi_chr{i}_set{j}_classes /home/peixott/beegfs/RFMix/inRF_chr{i}/RFMi_chr{i}_set{j}_location -o /home/peixott/beegfs/RFMix/outRF_chr{i}/output_chr{i}_set{j} --num-threads 24 -e 2 -w 0.2 --forward-backward --skip-check-input-format --succinct-output\n')
+                fileSlurm.write(f'mkdir /home/USER/RFMix/outRF_chr{i}\n')
+                fileSlurm.write(f'python2.7 /cm/shared/apps/RFMix/1.5.4/RunRFMix.py PopPhased /home/USER/RFMix/inRF_chr{i}/RFMi_chr{i}_set{j}_alleles /home/USER/RFMix/inRF_chr{i}/RFMi_chr{i}_set{j}_classes /home/USER/RFMix/inRF_chr{i}/RFMi_chr{i}_set{j}_location -o /home/USER/RFMix/outRF_chr{i}/output_chr{i}_set{j} --num-threads 24 -e 2 -w 0.2 --forward-backward --skip-check-input-format --succinct-output\n')
         
                 fileSlurm.close()
         

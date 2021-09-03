@@ -193,7 +193,7 @@ def getCovarHeader(covarDict, numAncestry):
         for i in range(numAncestry):
             header = header + f'\tdosage{i}'
 
-        for i in range(numAncestry-1):
+        for i in range(numAncestry):
             header = header + f'\tnumHap{i}'
 
         return header+"\n", order
@@ -436,7 +436,7 @@ def prepareCovar(vcfFile, msp, covar, outputPrefix, numAncestry, targetSNP):
                     for j in range(numAncestry):
                         outLine = f'{outLine}\t{dosageByAncestry[j]}'
 
-                    for j in range(numAncestry-1):
+                    for j in range(numAncestry):
                         outLine = f'{outLine}\t{numHaplotype[j]}'
 
                     covarFile.write(f'{outLine}\n')

@@ -1,6 +1,8 @@
 # KART - K-way Admixture and Relationship on Tractor
 ### Tractor without Hail
 
+This code is incomplete. The author apologizes to everyone who has tried to use it and got wrong results.
+
 ## Introduction
 
 This script was implemeneted based on the model published in Nature Genetics Atkinson et al (https://www.nature.com/articles/s41588-020-00766-y). In our tests we used teh RFMix 1, with the output converted to RFMix 2 model using the script RFMix1ToRFMix2.py.

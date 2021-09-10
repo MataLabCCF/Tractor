@@ -284,7 +284,10 @@ def callRunRegression(vcfFile, bcftools, Rscript, outputPrefix, msp, covarDict, 
     finalFile = open(f'{outputPrefix}_AllWald.txt', 'w')
     print(f'Merging all Wald files ({outputPrefix}_AllWald.txt)')
 
-    finalFile.write("SNP\tCHR\tPOS\tREF\tALT\tN\tAF\tBETA\tSE\tPVAL\tconverged\n")
+    finalFile.write("SNP\tCHR\tPOS")
+    for i in range(numAncestry):
+        finalFile.write(f'\tPVALUE_anc{i}')
+    finalFile.write('\n')
 
     decode = False
     if vcfFile[-2:] == "gz":
@@ -308,39 +311,57 @@ def callRunRegression(vcfFile, bcftools, Rscript, outputPrefix, msp, covarDict, 
             fileWaldName = f'{outputPrefix}_Wald_{SNP.replace(":", "_")}'
             fileWald = open(fileWaldName)
 
-            header = True
-            for line in fileWald:
-                if header:
-                    header = False
-                else:
-                    split = line.strip().split()
-                    finalFile.write(split[1].replace('\"', ""))
-                    for i in range(2, len(split)):
-                        withoutQuotes=split[i].strip().replace("\"", "")
-                        finalFile.write(f'\t{withoutQuotes}')
-                    finalFile.write('\n')
+            finalFile.write(f"{data[2]}\t{data[0]}\t{data[1]}")
+
+            for lineR in fileWald:
+                split = lineR.strip().split()
+                for i in range(0, len(split)):
+                    withoutQuotes=split[i].strip().replace("\"", "")
+                    finalFile.write(f'\t{withoutQuotes}')
+                finalFile.write('\n')
             fileWald.close()
             #if delete:
             #    os.system(f'rm {outputPrefix}_Wald_{SNP.replace(":", "_")}')
     finalFile.close()
 
-def createRScript(outputPrefix, statisticalModel, phenotype, id, kinship, covarDict, numAncestry, vcfFile, Rscript):
+def createAllModels(model, numAncestry, phenotype):
+    modelWithDosage = model
+    for i in range(numAncestry):
+        modelWithDosage = modelWithDosage + f' + dosage{i}'
+
+    line = ""
+    for i in range(numAncestry):
+        line = line + f'modelFullAnc{i} <- glm({phenotype} ~ {modelWithDosage} + numHap{i}, data = covar, family = binomial)\n'
+        line = line + f'modelWithoutDosageAnc{i} <- glm({phenotype} ~ {model} + numHap{i}, data = covar, family = binomial)\n'
+        line = line + f'testAnc{i} <- lrtest(modelFullAnc{i}, modelWithoutDosageAnc{i})\n'
+
+    line = line + f'writeLines(paste(testAnc0$`Pr(>Chisq)`[2]'
+    for i in range(1, numAncestry):
+        line = line+ f', testAnc{i}$`Pr(>Chisq)`[2]'
+    line = line + ', sep = \" \"), fileOut)\n'
+    line = line + f'close(fileOut)\n'
+    return line
+
+
+def createRScript(outputPrefix, statisticalModel, phenotype, id, kinship, covarDict, numAncestry, vcfFile, Rscript, tractorCovar):
     script = open(f'{outputPrefix}_script.R', 'w')
     print(f"Creating the R script ({outputPrefix}_script.R) ... ", end = "")
 
     script.write(f'library(GMMAT)\n'
                  f'library(SeqArray)\n'
-                 f'options <- commandArgs(trailingOnly = TRUE)\n'
+                 f'library(lmtest)\n'
+                 f'\noptions <- commandArgs(trailingOnly = TRUE)\n'
                  f'outName <- options[1]\n'
                  f'covarFile <- options[2]\n'
                  f'SNP <- options[3]\n'
                  f'GDS <- options[4]\n'
+                 f'\nfileOut <- file(outName)\n'
 
-                 f'covar <- read.table(covarFile, header = T, sep = "\\t")\n'
+                 f'\ncovar <- read.table(covarFile, header = T, sep = "\\t")\n'
                  f'covar$ID <- as.factor(covar$ID)\n'
-                 f'covar${phenotype} <- as.factor(covar${phenotype})\n')
+                 f'covar${phenotype} <- as.factor(covar${phenotype})\n\n')
 
-
+    #TODO KINSHIP
     if not statisticalModel:
         first = True
         model = ""
@@ -352,30 +373,40 @@ def createRScript(outputPrefix, statisticalModel, phenotype, id, kinship, covarD
                     model = f'{covar}'
                 else:
                     model = f'{model} + {covar}'
-        for i in range(numAncestry):
-            model = model + f' + dosage{i}'
 
-        for i in range(numAncestry - 1):
-            model = model + f' + numHap{i}'
-
-        if kinship:
-            script.write(f'kinship <- as.matrix(read.table("{kinship}", check.names=FALSE))\n'             
-                         f'Wald <- glmm.wald({phenotype} ~ {model}, data = covar, kins = kinship, id = \"ID\", infile = GDS, '
-                         f'snps = SNP, is.dosage = T)\n')
-
-        else:
-            script.write(f'Wald <- glmm.wald({phenotype} ~ {model}, data = covar, id = \"ID\", infile = GDS, '
-                         f'snps = SNP, is.dosage = T)\n')
+        lines = createAllModels(model, numAncestry, phenotype)
+        script.write(lines)
     else:
-        if kinship:
-            script.write(f'kinship <- as.matrix(read.table("{kinship}", check.names=FALSE))\n'
-                         f'Wald <- glmm.wald({phenotype} ~ {statisticalModel}, data = covar, kins = kinship, id = \"ID\", infile = GDS, '
-                         f'snps = SNP, is.dosage = T)\n')
-        else:
-            script.write(f'Wald <- glmm.wald({phenotype} ~ {statisticalModel}, data = covar, id = \"ID\", infile = GDS, '
-                         f'snps = SNP, is.dosage = T)\n')
+        if tractorCovar:
+            lines = createAllModels(statisticalModel, numAncestry, phenotype)
+            script.write(lines)
 
-    script.write(f'write.table(Wald, outName, sep="\t")\n')
+
+
+    #     for i in range(numAncestry):
+    #         model = model + f' + dosage{i}'
+    #
+    #     for i in range(numAncestry - 1):
+    #         model = model + f' + numHap{i}'
+    #
+    #     if kinship:
+    #         script.write(f'kinship <- as.matrix(read.table("{kinship}", check.names=FALSE))\n'
+    #                      f'Wald <- glmm.wald({phenotype} ~ {model}, data = covar, kins = kinship, id = \"ID\", infile = GDS, '
+    #                      f'snps = SNP, is.dosage = T)\n')
+    #
+    #     else:
+    #         script.write(f'Wald <- glmm.wald({phenotype} ~ {model}, data = covar, id = \"ID\", infile = GDS, '
+    #                      f'snps = SNP, is.dosage = T)\n')
+    # else:
+    #     if kinship:
+    #         script.write(f'kinship <- as.matrix(read.table("{kinship}", check.names=FALSE))\n'
+    #                      f'Wald <- glmm.wald({phenotype} ~ {statisticalModel}, data = covar, kins = kinship, id = \"ID\", infile = GDS, '
+    #                      f'snps = SNP, is.dosage = T)\n')
+    #     else:
+    #         script.write(f'Wald <- glmm.wald({phenotype} ~ {statisticalModel}, data = covar, id = \"ID\", infile = GDS, '
+    #                      f'snps = SNP, is.dosage = T)\n')
+    #
+    # script.write(f'write.table(Wald, outName, sep="\t")\n')
     script.close()
 
 
@@ -463,6 +494,10 @@ if __name__ == '__main__':
     optional.add_argument('-s', '--statisticalModel',
                           help='Statistical Model. If not provided, we will include all covariatives', required=False,
                           default='')
+    optional.add_argument('-T', '--Tractor',
+                          help='If the user select the flag -s, this flag insert the Tractor covariates (Default True)', required=False,
+                          default= True, action = 'store_false')
+
     optional.add_argument('-t', '--threads', help='Number of threads to run (default = 1)', required=False, default=1)
     optional.add_argument('-b', '--bcftools', help='Path for the BCFTOOLS (default bcftools)',
                           required=False, default='bcftools')
@@ -479,6 +514,6 @@ if __name__ == '__main__':
     args.output = args.folder+'/'+args.output
 
     covarDict = openCovar(args.covar, args.id)
-    createRScript(args.output, args.statisticalModel, args.phenotype, args.id, args.kinship, covarDict, int(args.numAncestry), args.vcf, args.Rscript)
+    createRScript(args.output, args.statisticalModel, args.phenotype, args.id, args.kinship, covarDict, int(args.numAncestry), args.vcf, args.Rscript, args.Tractor)
     callRunRegression(args.vcf, args.bcftools, args.Rscript, args.output, msp, covarDict, int(args.numAncestry), int(args.threads), args.delete)
 

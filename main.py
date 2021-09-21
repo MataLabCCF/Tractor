@@ -29,8 +29,8 @@ class MSP:
             finish(f"[Error in MSP File]: The ID ({id}) is duplicate")
         self.individuals[id] = mosaics()
 
-    def addAncestryHaplotype(self, id, hapID, anc):
-        self.individuals[id].addAnc(hapID, anc)
+    def addAncestryHaplotype(self, id, hapID, anc, posteriori):
+        self.individuals[id].addAnc(hapID, anc, posteriori)
 
     def addInfoAboutWindow(self, chr, startPos, endPos):
         self.chr = chr
@@ -73,24 +73,29 @@ class MSP:
 class mosaics:
     def __init__(self):
         self.haplotypeA = []
+        self.posterioriA = []
         self.haplotypeB = []
+        self.posterioriB = []
 
     def printHaplotype(self, hapID):
         if hapID == "A":
-            for window in self.haplotypeA:
-                print(f' {window}', end="")
+            for i in range(len(self.haplotypeA)):
+                print(f' {self.haplotypeA[i]}:{self.posterioriA[i]}', end="")
         elif hapID == "B":
-            for window in self.haplotypeB:
-                print(f' {window}', end="")
+            for i in range(len(self.haplotypeB)):
+                print(f' {self.haplotypeB[i]}:{self.posterioriB[i]}', end="")
+
 
     def getAncInWindow(self, index):
-        return int(self.haplotypeA[index]), int(self.haplotypeB[index])
+        return int(self.haplotypeA[index]), int(self.haplotypeB[index]), float(self.posterioriA[index]), float(self.posterioriB[index])
 
-    def addAnc(self, hapID, anc):
+    def addAnc(self, hapID, anc, posteriori):
         if hapID == "A":
             self.haplotypeA.append(anc)
+            self.posterioriA.append(posteriori)
         elif hapID == "B":
             self.haplotypeB.append(anc)
+            self.posterioriB.append(posteriori)
         else:
             finish(f"[Error in MSP File] The haplotype {hapID} was not accepted")
 
@@ -99,8 +104,13 @@ def finish(message):
     sys.exit(message)
 
 
-def openMSP(mspFile):
-    file = open(mspFile)
+def openMSP(mspFile, fowardBackward, numAnc):
+    file = open(mspFile+'.msp.tsv')
+    if fowardBackward:
+        filePosteriori = open(mspFile + '.fb.tsv')
+        #Remove both headers
+        line = filePosteriori.readline()
+        line = filePosteriori.readline()
 
     obj = MSP()
 
@@ -114,9 +124,24 @@ def openMSP(mspFile):
                 headerRead = True
         else:
             split = line.strip().split('\t')
-            for i in range(6, len(split), 2):
-                obj.addAncestryHaplotype(header[i], "A", split[i])
-                obj.addAncestryHaplotype(header[i], "B", split[i + 1])
+            splitSlice = split[6:]
+            if fowardBackward:
+                fbLine = filePosteriori.readline()
+                splitFB = [float(item) for item in fbLine.strip().split('\t')]
+                fbSlice = splitFB[5:]
+
+            for i in range(0, len(splitSlice), 2):
+                if fowardBackward:
+                    baseFB = (i)*numAnc
+
+                    posteriori1 = max(fbSlice[baseFB:baseFB+numAnc])
+                    posteriori2 = max(fbSlice[baseFB+numAnc:baseFB+numAnc*2])
+
+                    obj.addAncestryHaplotype(header[i+6], "A", splitSlice[i], posteriori1)
+                    obj.addAncestryHaplotype(header[i+6], "B", splitSlice[i+1], posteriori2)
+                else:
+                    obj.addAncestryHaplotype(header[i+6], "A", splitSlice[i], 1)
+                    obj.addAncestryHaplotype(header[i+6], "B", splitSlice[i+1], 1)
 
             obj.addInfoAboutWindow(split[0], split[1], split[2])
     return obj
@@ -175,11 +200,18 @@ def checkIndividuals(vcfLine, msp, covar):
 
     return data
 
-def getGT(dataRaw):
+def getDosage(dataRaw, description, dosageField, dosageSeparator, dosagePosition):
+    position = dosagePosition.split()
+    position[0] = int(position[0])
+    position[1] = int(position[1])
     data = dataRaw.split(":")
-    for field in data:
-        if '|' in field:
-            return field.split('|')
+    descriptionNames = description.split(":")
+    for i in range(len(descriptionNames)):
+        if descriptionNames[i] == dosageField:
+            interest = i
+
+    dataSplit = data[interest].split(dosageSeparator)
+    return dataSplit[position[0]], dataSplit[position[1]]
 
 def getCovarHeader(covarDict, numAncestry):
     order = []
@@ -214,11 +246,11 @@ def resetList(haplotype, dosage):
     return haplotype, dosage
 
 def runRegression(args):
-    (VCF, chrPos, id, bcftools, Rscript, outputPrefix, msp, covarDict, numAncestry, gdsName, delete) = args
+    (VCF, chrPos, id, bcftools, Rscript, outputPrefix, msp, covarDict, numAncestry, gdsName, delete, dosageField, dosageSeparator, dosagePosition) = args
     global idx
     extractedVCF = f'{outputPrefix}_Extracted_{chrPos}_Worker{idx}.vcf.gz'
     os.system(f"{bcftools} view -r {chrPos} -Oz -o {extractedVCF} {VCF}")
-    covarFile, SNP = prepareCovar(extractedVCF, msp, covarDict, outputPrefix, numAncestry, id)
+    covarFile, SNP = prepareCovar(extractedVCF, msp, covarDict, outputPrefix, numAncestry, id, dosageField, dosageSeparator, dosagePosition)
     gdsName = gdsName.replace('IDTOPOOL', f'{idx}')
     outputWald = f'{outputPrefix}_Wald_{SNP.replace(":", "_")}'
     os.system(f'{Rscript} {outputPrefix}_script.R {outputWald} {covarFile} {id} {gdsName}')
@@ -240,14 +272,18 @@ def convertToGDS(vcfFile, Rscript, outName, numProcess):
     os.system(f'{Rscript} {outName}_convertGDS.R')
     return (f"{outName}_GDS_IDTOPOOL.gds")
 
-def callRunRegression(vcfFile, bcftools, Rscript, outputPrefix, msp, covarDict, numAncestry, numProcess, delete):
+def callRunRegression(vcfFile, bcftools, Rscript, outputPrefix, msp, covarDict, numAncestry, numProcess, delete, dosageField, dosageSeparator, dosagePosition, insertHeader):
     params = []
 
-    print("Creating the GDS\n")
-    startTime = time.time()
-    gdsName = convertToGDS(vcfFile, Rscript, outputPrefix, numProcess)
-    endTime = time.time()
-    print(f"GDS created ({endTime-startTime} s)")
+    #print("Creating the GDS\n")
+    #startTime = time.time()
+    #gdsName = convertToGDS(vcfFile, Rscript, outputPrefix, numProcess)
+    #endTime = time.time()
+    #print(f"GDS created ({endTime-startTime} s)")
+
+    gdsName = "Temporary"
+
+
 
     decode = False
     if vcfFile[-2:] == "gz":
@@ -266,14 +302,15 @@ def callRunRegression(vcfFile, bcftools, Rscript, outputPrefix, msp, covarDict, 
                 header = False
         else:
             data = line.strip().split()
-            params.append([vcfFile, f'{data[0]}:{data[1]}',f'{data[2]}', bcftools, Rscript, outputPrefix, msp, covarDict, numAncestry, gdsName, delete])
+            params.append([vcfFile, f'{data[0]}:{data[1]}',f'{data[2]}', bcftools, Rscript, outputPrefix, msp,
+                           covarDict, numAncestry, gdsName, delete, dosageField, dosageSeparator, dosagePosition])
 
     #====================================================================================================
     #Pool to save time
     manager = multiprocessing.Manager()
     poolIDs = manager.Queue()
     for proc in range(numProcess):
-        os.system(f"cp {gdsName} {gdsName.replace('IDTOPOOL', f'{proc}')}")
+        #os.system(f"cp {gdsName} {gdsName.replace('IDTOPOOL', f'{proc}')}")
         poolIDs.put(proc)
 
 
@@ -284,10 +321,11 @@ def callRunRegression(vcfFile, bcftools, Rscript, outputPrefix, msp, covarDict, 
     finalFile = open(f'{outputPrefix}_AllWald.txt', 'w')
     print(f'Merging all Wald files ({outputPrefix}_AllWald.txt)')
 
-    finalFile.write("SNP\tCHR\tPOS")
-    for i in range(numAncestry):
-        finalFile.write(f'\tPVALUE_anc{i}')
-    finalFile.write('\n')
+    if insertHeader:
+        finalFile.write("SNP\tCHR\tPOS")
+        for i in range(numAncestry):
+            finalFile.write(f'\tBETA_anc{i}\tSE_anc{i}\tPVALUE_anc{i}')
+        finalFile.write('\n')
 
     decode = False
     if vcfFile[-2:] == "gz":
@@ -311,7 +349,7 @@ def callRunRegression(vcfFile, bcftools, Rscript, outputPrefix, msp, covarDict, 
             fileWaldName = f'{outputPrefix}_Wald_{SNP.replace(":", "_")}'
             fileWald = open(fileWaldName)
 
-            finalFile.write(f"{data[2]}\t{data[0]}\t{data[1]}")
+            finalFile.write(f"{data[2]}\t{data[0].replace('chr', '')}\t{data[1]}")
 
             for lineR in fileWald:
                 split = lineR.strip().split()
@@ -320,8 +358,8 @@ def callRunRegression(vcfFile, bcftools, Rscript, outputPrefix, msp, covarDict, 
                     finalFile.write(f'\t{withoutQuotes}')
                 finalFile.write('\n')
             fileWald.close()
-            #if delete:
-            #    os.system(f'rm {outputPrefix}_Wald_{SNP.replace(":", "_")}')
+            if delete:
+                os.system(f'rm {outputPrefix}_Wald_{SNP.replace(":", "_")}')
     finalFile.close()
 
 def createAllModels(model, numAncestry, phenotype):
@@ -329,18 +367,24 @@ def createAllModels(model, numAncestry, phenotype):
     for i in range(numAncestry):
         modelWithDosage = modelWithDosage + f' + dosage{i}'
 
+    for i in range(numAncestry-1):
+        modelWithDosage = modelWithDosage + f' + numHap{i}'
     line = ""
-    for i in range(numAncestry):
-        line = line + f'modelFullAnc{i} <- glm({phenotype} ~ {modelWithDosage} + numHap{i}, data = covar, family = binomial)\n'
-        line = line + f'modelWithoutDosageAnc{i} <- glm({phenotype} ~ {model} + numHap{i}, data = covar, family = binomial)\n'
-        line = line + f'testAnc{i} <- lrtest(modelFullAnc{i}, modelWithoutDosageAnc{i})\n'
 
-    line = line + f'writeLines(paste(testAnc0$`Pr(>Chisq)`[2]'
-    for i in range(1, numAncestry):
-        line = line+ f', testAnc{i}$`Pr(>Chisq)`[2]'
-    line = line + ', sep = \" \"), fileOut)\n'
+    line = line + f'modelFull <- glm({phenotype} ~ {modelWithDosage}, data = covar, family = binomial)\n'
+
+    for i in range(0, numAncestry):
+        line = line+ f'beta{i} = coef(modelFull)[[\"dosage{i}\"]]\n'
+        line = line +f'SE{i} = sqrt(vcov(modelFull)[\"dosage{i}\",\"dosage{i}\"])\n'
+        line = line +f'pval{i} = pnorm(-abs(beta{i})/SE{i})*2\n'
+
+    line = line + f'writeLines(paste('
+    for i in range(0, numAncestry):
+        line = line+f'beta{i}, SE{i}, pval{i},'
+    line = line + 'sep = \" \"), fileOut)\n'
     line = line + f'close(fileOut)\n'
     return line
+
 
 
 def createRScript(outputPrefix, statisticalModel, phenotype, id, kinship, covarDict, numAncestry, vcfFile, Rscript, tractorCovar):
@@ -411,7 +455,7 @@ def createRScript(outputPrefix, statisticalModel, phenotype, id, kinship, covarD
 
 
 
-def prepareCovar(vcfFile, msp, covar, outputPrefix, numAncestry, targetSNP):
+def prepareCovar(vcfFile, msp, covar, outputPrefix, numAncestry, targetSNP, dosageField, dosageSeparator, dosagePosition):
     decode = False
     if vcfFile[-2:] == "gz":
         file = gzip.open(vcfFile, 'r')
@@ -447,13 +491,13 @@ def prepareCovar(vcfFile, msp, covar, outputPrefix, numAncestry, targetSNP):
                     outLine = ''
 
                     ind = headerLine[i]
-                    anc1, anc2 = msp.getAncPos(ind, pos)
+                    anc1, anc2, posteriori1, posteriori2 = msp.getAncPos(ind, pos)
                     numHaplotype, dosageByAncestry = resetList(numHaplotype, dosageByAncestry)
 
-                    GT = getGT(data[i])
+                    dosages = getDosage(data[i], data[8], dosageField, dosageSeparator, dosagePosition)
 
-                    dosageByAncestry[anc1] = dosageByAncestry[anc1] + int(GT[0])
-                    dosageByAncestry[anc2] = dosageByAncestry[anc2] + int(GT[1])
+                    dosageByAncestry[anc1] = dosageByAncestry[anc1] + float(posteriori1)*float(dosages[0])
+                    dosageByAncestry[anc2] = dosageByAncestry[anc2] + float(posteriori2)*float(dosages[1])
 
                     numHaplotype[anc1] = numHaplotype[anc1] + 1
                     numHaplotype[anc2] = numHaplotype[anc2] + 1
@@ -477,43 +521,69 @@ def prepareCovar(vcfFile, msp, covar, outputPrefix, numAncestry, targetSNP):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Tractor without Hail')
 
-    required = parser.add_argument_group("Required arguments")
-    required.add_argument('-m', '--msp', help='MSP file from RFMix (preferred the unkinked)', required=True)
-    required.add_argument('-v', '--vcf', help='VCF file (preferred the unkinked)', required=True)
-    required.add_argument('-n', '--numAncestry', help='Number of ancestries in MSP file', required=True)
-    required.add_argument('-c', '--covar', help='Table with the covariatives', required=True)
-    required.add_argument('-i', '--id', help='Name of the column with individual ID on covar file', required=True)
-    required.add_argument('-p', '--phenotype', help='Name of the column with phenotype', required=True)
+    requiredGroup1 = parser.add_argument_group("Required arguments related to genetic files")
+    requiredGroup1.add_argument('-m', '--mspPrefix', help='MSP prefix (without .msp.fb) file from RFMix (preferred the unkinked)', required=True)
+    requiredGroup1.add_argument('-v', '--vcf', help='VCF file (preferred the unkinked)', required=True)
+    requiredGroup1.add_argument('-n', '--numAncestry', help='Number of ancestries in MSP file', required=True)
 
-    required.add_argument('-o', '--output', help='Output prefix ', required=True)
-    required.add_argument('-f', '--folder', help='Folder to store the results ', required=True)
+    requiredGroup2 = parser.add_argument_group("Required arguments related to covar files")
+    requiredGroup2.add_argument('-c', '--covar', help='Table with the covariatives', required=True)
+    requiredGroup2.add_argument('-i', '--id', help='Name of the column with individual ID on covar file', required=True)
+    requiredGroup2.add_argument('-p', '--phenotype', help='Name of the column with phenotype', required=True)
 
-    optional = parser.add_argument_group("Optional arguments")
+    requiredGroup3 = parser.add_argument_group("Required arguments related to output")
+    requiredGroup3.add_argument('-o', '--output', help='Output prefix ', required=True)
+    requiredGroup3.add_argument('-f', '--folder', help='Folder to store the results ', required=True)
 
-    optional.add_argument('-k', '--kinship', help='File with kinship coefficient', required=False, default = '')
-    optional.add_argument('-s', '--statisticalModel',
+    optionalGroup1 = parser.add_argument_group("Optional arguments to model")
+
+    optionalGroup1.add_argument('-k', '--kinship', help='File with kinship coefficient', required=False, default = '')
+    optionalGroup1.add_argument('-s', '--statisticalModel',
                           help='Statistical Model. If not provided, we will include all covariatives', required=False,
                           default='')
-    optional.add_argument('-T', '--Tractor',
+    optionalGroup1.add_argument('-T', '--Tractor',
                           help='If the user select the flag -s, this flag insert the Tractor covariates (Default True)', required=False,
                           default= True, action = 'store_false')
 
-    optional.add_argument('-t', '--threads', help='Number of threads to run (default = 1)', required=False, default=1)
-    optional.add_argument('-b', '--bcftools', help='Path for the BCFTOOLS (default bcftools)',
+    optionalGroup2 = parser.add_argument_group("Optional arguments related to system")
+    optionalGroup2.add_argument('-t', '--threads', help='Number of threads to run (default = 1)', required=False, default=1)
+    optionalGroup2.add_argument('-b', '--bcftools', help='Path for the BCFTOOLS (default bcftools)',
                           required=False, default='bcftools')
-    optional.add_argument('-R', '--Rscript', help='Path for the Rscript with SeqArray and GMMAT installed (default Rscript)',
+    optionalGroup2.add_argument('-R', '--Rscript', help='Path for the Rscript with SeqArray and GMMAT installed (default Rscript)',
                           required=False, default='Rscript')
-    optional.add_argument('-d', '--delete',
-                          help='Set to remove temporary files (default = False)',
+    optionalGroup2.add_argument('-e', '--exclude',
+                          help='Set to exclude temporary files (default = False)',
                           required=False, default=False, action='store_true')
+    optionalGroup2.add_argument('-H', '--Header',
+                                help='Set to not output the header in all p-values merged (default = True, ie, output has a header)',
+                                required=False, default=True, action='store_false')
+
+    optionalGroup3 = parser.add_argument_group("Optional arguments related to dosage")
+    optionalGroup3.add_argument('-D', '--dosageField',
+                          help='Select the field to extract the dosage value (default: GT)',
+                          required=False, default="GT")
+    optionalGroup3.add_argument('-S', '--separatorDosageField',
+                          help='Separator from select dosage field (default | for GT)',
+                          required=False, default="|")
+    optionalGroup3.add_argument('-P', '--positionDosageField',
+                          help='Position form the values splited on dosage field (default \"0 1\" for GT)',
+                          required=False, default="0 1")
+
+    optionalGroup4 = parser.add_argument_group("Optional arguments related to local ancestry")
+    optionalGroup4.add_argument('-F', '--fowardBackward',
+                          help='Use the posterior probability from Foward backward to count the dosage per ancestry (default False)',
+                          required=False, default=False, action= "store_true")
 
     args = parser.parse_args()
-    msp = openMSP(args.msp)
+    msp = openMSP(args.mspPrefix, args.fowardBackward, int(args.numAncestry))
 
     os.system(f'mkdir {args.folder}')
     args.output = args.folder+'/'+args.output
 
     covarDict = openCovar(args.covar, args.id)
-    createRScript(args.output, args.statisticalModel, args.phenotype, args.id, args.kinship, covarDict, int(args.numAncestry), args.vcf, args.Rscript, args.Tractor)
-    callRunRegression(args.vcf, args.bcftools, args.Rscript, args.output, msp, covarDict, int(args.numAncestry), int(args.threads), args.delete)
+    createRScript(args.output, args.statisticalModel, args.phenotype, args.id, args.kinship, covarDict,
+                  int(args.numAncestry), args.vcf, args.Rscript, args.Tractor)
+    callRunRegression(args.vcf, args.bcftools, args.Rscript, args.output, msp, covarDict, int(args.numAncestry),
+                      int(args.threads), args.exclude, args.dosageField, args.separatorDosageField,
+                      args.positionDosageField, args.Header)
 

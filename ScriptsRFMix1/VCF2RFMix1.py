@@ -12,6 +12,49 @@ import argparse
 def getchar():
     c = sys.stdin.read(1)
 
+def printHaploid(ind, indClass, firstInd):
+    lineReturn = ''
+    if not firstInd:
+        lineReturn= ' '
+    if ind not in indClass:
+        lineReturn = lineReturn+"0"
+    else:
+        lineReturn = lineReturn+f'{indClass[ind]}'
+
+    return lineReturn, False
+
+
+def printDiploid(ind, indClass, firstInd):
+    lineReturn = ''
+    if not firstInd:
+        lineReturn = ' '
+    if ind not in indClass:
+        lineReturn = lineReturn + "0 0"
+    else:
+        lineReturn = lineReturn + f'{indClass[ind]} {indClass[ind]}'
+
+    return lineReturn, False
+
+def printClassFile(fileName, indClass, chrX, callList, chrXFileName):
+
+    firstInd = True
+    classes = open(f'{fileName}', 'w')
+    if chrX:
+        XList = open(f'{chrXFileName}', 'w')
+    for ind in callList:
+        if chrX:
+            GT = callList[ind].data.get('GT').split('|')
+            if len(GT) == 1:
+                line, firstInd = printHaploid(ind, indClass, firstInd)
+                XList.write(f'{ind}\tH\n')
+            else:
+                line, firstInd = printDiploid(ind, indClass, firstInd)
+                XList.write(f'{ind}\tD\n')
+        else:
+            if ind not in indClass:
+                line, firstInd = printDiploid(ind, indClass, firstInd)
+        classes.write(line)
+    classes.close()
 
 def createBin(vcf, genmap, output, chrom):
     if genmap[-3:] == '.gz':
@@ -38,10 +81,12 @@ if __name__ == '__main__':
     required.add_argument('-o', '--output', help='Output name file', required=True)
     required.add_argument('-m', '--map', help='Genetic map', required=False)
 
+    optional = parser.add_argument_group("Optional arguments")
+    required.add_argument('-X', '--Xmen', help='This flag allows the output of haploid individuals', required=False, default=False, action='store_true')
+
     args = parser.parse_args()
 
-
-
+    chrX = args.Xmen
     
     indClass = {}
     mapDict = {}
@@ -56,7 +101,6 @@ if __name__ == '__main__':
             numParental = numParental+1
             popDict[split[1]] = numParental
         indClass[split[0]] = popDict[split[1]]
-    classPrint = False
     
     bim = createBin(args.vcf, args.map, args.output, args.chromosome)
     
@@ -76,35 +120,29 @@ if __name__ == '__main__':
     mapFile.close()
     
     count = 0
-    firstInd = True
     reader = vcfpy.Reader.from_path(f'{args.vcf}')
-    classes = open(f'{args.output}_classes', 'w')
     alleles = open(f'{args.output}_alleles', 'w')
     location = open(f'{args.output}_location', 'w')
+
+
+    classPrint = False
     for record in reader:
         location.write(f'{mapDict[record.POS]}\n')
         callList = record.call_for_sample
-        for ind in callList:
-            if not classPrint:
-                if ind not in indClass:
-                    if firstInd:
-                        firstInd = False
-                        classes.write('0 0')
-                    else:
-                        classes.write(' 0 0')
-                else:
-                    if firstInd:
-                        firstInd = False
-                        classes.write(f'{indClass[ind]} {indClass[ind]}')
-                    else:
-                        classes.write(f' {indClass[ind]} {indClass[ind]}')
-            
-            GT = callList[ind].data.get('GT').split('|')
-            alleles.write(f'{GT[0]}{GT[1]}')
-        
+
         if not classPrint:
+            printClassFile (f'{args.output}_classes', indClass, chrX, callList, f'{args.output}_X_Inds.txt')
             classPrint = True
-            classes.close()
+
+        for ind in callList:
+            GT = callList[ind].data.get('GT').split('|')
+            if chrX:
+                if len(GT) == 1:
+                    alleles.write(f'{GT[0]}')
+                else:
+                    alleles.write(f'{GT[0]}{GT[1]}')
+            else:
+                alleles.write(f'{GT[0]}{GT[1]}')
         alleles.write('\n')
     print(f'{count} unmapped (0 cM)')
     alleles.close()

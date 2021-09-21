@@ -17,12 +17,20 @@ def createMappingDict(mapping):
 
     return dict
 
-def createClassesPerSetDict(set, classes, mappingDict, first, last):
+def createClassesPerSetDict(set, classes, mappingDict, first, last, XList):
     print('Function: createClassesPerSetDict')
     indPerSet = {}
     classIDPerSet = {}
     pops = []
+    XDict = {}
     for setNumber in range(first, last+1):
+        if XList:
+            XListChr = XList.replace('*', str(setNumber))
+            XFile = open(XListChr)
+            for line in XFile:
+                split = line.strip().split()
+                XDict[split[0]] = split[1]
+
         setWithChr = set.replace('*', str(setNumber))
         classesWithChr = classes.replace('*', str(setNumber))
 
@@ -70,7 +78,7 @@ def createClassesPerSetDict(set, classes, mappingDict, first, last):
     # List with all parental populations
     # ---------------------------
 
-    return classIDPerSet, indPerSet, pops
+    return classIDPerSet, indPerSet, pops, XDict
 def createHeader(popList):
     header = '#reference_panel_population:'
     for parental in popList:
@@ -97,18 +105,23 @@ def createHeaderWithMSP(popList):
     
     return header, headerMSP
 
-def addToHeaderWithMSP(indPerSet, popList, setNum, header, headerMSP):
+def addToHeaderWithMSP(indPerSet, popList, setNum, header, headerMSP, XDict):
     for ind in indPerSet[setNum]:
-        for i in range(1,3):
-            for parental in popList:
-                header = header+f'\t{ind}:::hap{i}:::{parental}'
-        headerMSP = headerMSP+f'\t{ind}\t{ind}.1'
-            
+        if XDict[ind] == "D":
+            for i in range(1,3):
+                for parental in popList:
+                    header = header+f'\t{ind}:::hap{i}:::{parental}'
+            headerMSP = headerMSP+f'\t{ind}\t{ind}.1'
+        else:
+            for i in range(1,2):
+                for parental in popList:
+                    header = header+f'\t{ind}:::hap{i}:::{parental}'
+            headerMSP = headerMSP+f'\t{ind}'
     return header, headerMSP
 
-def convertOutputRFMixWindow(vcf, mapping, fowardBackward, output, setPrefix, classes, first, last, chrom, plink, geneticMap, snpPerWindow):
+def convertOutputRFMixWindow(vcf, mapping, fowardBackward, output, setPrefix, classes, first, last, chrom, plink, geneticMap, Xlist, snpPerWindow):
     mappingDict = createMappingDict(mapping)
-    classesPerSet, indPerSet, popList = createClassesPerSetDict(setPrefix, classes, mappingDict, first, last)
+    classesPerSet, indPerSet, popList, XDict = createClassesPerSetDict(setPrefix, classes, mappingDict, first, last, Xlist)
 
     print(f'Open the fowardBackward files to create a {output}.fb.tsv file')
 
@@ -117,7 +130,7 @@ def convertOutputRFMixWindow(vcf, mapping, fowardBackward, output, setPrefix, cl
     snpPerWindowReaded = False
 
     for setNum in range(first, last+1):
-        header, headerMSP = addToHeaderWithMSP(indPerSet, popList, setNum, header,headerMSP)
+        header, headerMSP = addToHeaderWithMSP(indPerSet, popList, setNum, header,headerMSP, XDict)
         fowardBackwardWithSet = fowardBackward.replace('*', str(setNum))
 
         if not snpPerWindowReaded:
@@ -243,7 +256,7 @@ def convertOutputRFMixWindow(vcf, mapping, fowardBackward, output, setPrefix, cl
 
 
 
-def convertOutputRFMix(vcf, mapping, fowardBackward, output, setPrefix, classes, first, last, chrom, plink, geneticMap):
+def convertOutputRFMix(vcf, mapping, fowardBackward, output, setPrefix, classes, first, last, chrom, plink, geneticMap, Xlist):
     mappingDict = createMappingDict(mapping)
     classesPerSet, indPerSet, popList = createClassesPerSetDict(setPrefix, classes, mappingDict, first, last)
 
@@ -366,12 +379,13 @@ if __name__ == '__main__':
     #Plink
     required = parser.add_argument_group("optional arguments")
     required.add_argument('-p', '--plink', help='Path to PLINK (default plink)', required=False, default = 'plink')
+    required.add_argument('-X', '--XList', help='List of individuals created by VCF2RFMix with flag -X or --Xmen with the set number replaced by *', required=False, default = '')
 
     args = parser.parse_args()
 
     if not args.snpPerWindow:
         convertOutputRFMix(args.vcf, args.mapping, args.fowardBackward, args.output, args.set, args.classes,
-                       int(args.begin), int(args.end), args.chromosome, args.plink, args.geneticMap)
+                       int(args.begin), int(args.end), args.chromosome, args.plink, args.geneticMap, args.XList)
     else:
         convertOutputRFMixWindow(args.vcf, args.mapping, args.fowardBackward, args.output, args.set, args.classes,
-                       int(args.begin), int(args.end), args.chromosome, args.plink, args.geneticMap, args.snpPerWindow)
+                       int(args.begin), int(args.end), args.chromosome, args.plink, args.geneticMap, args.XList, args.snpPerWindow)

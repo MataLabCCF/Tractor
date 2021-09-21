@@ -1,7 +1,6 @@
 # KART - K-way Admixture and Relationship on Tractor
 ### Tractor without Hail
 
-This code is incomplete. The author apologizes to everyone who has tried to use it and got wrong results.
 
 ## Introduction
 
@@ -51,33 +50,53 @@ Tractor without Hail
 optional arguments:
   -h, --help            show this help message and exit
 
-Required arguments:
-  -m MSP, --msp MSP     MSP file from RFMix (preferred the unkinked)
+Required arguments related to genetic files:
+  -m MSPPREFIX, --mspPrefix MSPPREFIX
+                        MSP prefix (without .msp.fb) file from RFMix (preferred the unkinked)
   -v VCF, --vcf VCF     VCF file (preferred the unkinked)
   -n NUMANCESTRY, --numAncestry NUMANCESTRY
                         Number of ancestries in MSP file
+
+Required arguments related to covar files:
   -c COVAR, --covar COVAR
                         Table with the covariatives
   -i ID, --id ID        Name of the column with individual ID on covar file
   -p PHENOTYPE, --phenotype PHENOTYPE
                         Name of the column with phenotype
+
+Required arguments related to output:
   -o OUTPUT, --output OUTPUT
                         Output prefix
   -f FOLDER, --folder FOLDER
                         Folder to store the results
 
-Optional arguments:
+Optional arguments to model:
   -k KINSHIP, --kinship KINSHIP
                         File with kinship coefficient
   -s STATISTICALMODEL, --statisticalModel STATISTICALMODEL
                         Statistical Model. If not provided, we will include all covariatives
+  -T, --Tractor         If the user select the flag -s, this flag insert the Tractor covariates (Default True)
+
+Optional arguments related to system:
   -t THREADS, --threads THREADS
                         Number of threads to run (default = 1)
   -b BCFTOOLS, --bcftools BCFTOOLS
                         Path for the BCFTOOLS (default bcftools)
   -R RSCRIPT, --Rscript RSCRIPT
                         Path for the Rscript with SeqArray and GMMAT installed (default Rscript)
-  -d, --delete          Set to remove temporary files (default = False)
+  -e, --exclude         Set to exclude temporary files (default = False)
+  -H, --Header          Set to not output the header in all p-values merged (default = True, ie, output has a header)
+
+Optional arguments related to dosage:
+  -D DOSAGEFIELD, --dosageField DOSAGEFIELD
+                        Select the field to extract the dosage value (default: GT)
+  -S SEPARATORDOSAGEFIELD, --separatorDosageField SEPARATORDOSAGEFIELD
+                        Separator from select dosage field (default | for GT)
+  -P POSITIONDOSAGEFIELD, --positionDosageField POSITIONDOSAGEFIELD
+                        Position form the values splited on dosage field (default "0 1" for GT)
+
+Optional arguments related to local ancestry:
+  -F, --fowardBackward  Use the posterior probability from Foward backward to count the dosage per ancestry (default False)
 ```
 
  #### Acknowledgment

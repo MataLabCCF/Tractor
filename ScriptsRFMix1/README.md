@@ -56,4 +56,6 @@ Developer: Thiago Peixoto Leal, PhD (thpeixotol@hotmail.com)
 
 Contributors: Victor Borda, PhD - University of Maryland
 
+Regular Thanks: Mateus Gouveia, PhD - NIH
+
 Special Thanks: Michael Weiner, the HPC Administrator

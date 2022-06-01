@@ -51,8 +51,7 @@ def printClassFile(fileName, indClass, chrX, callList, chrXFileName):
                 line, firstInd = printDiploid(ind, indClass, firstInd)
                 XList.write(f'{ind}\tD\n')
         else:
-            if ind not in indClass:
-                line, firstInd = printDiploid(ind, indClass, firstInd)
+            line, firstInd = printDiploid(ind, indClass, firstInd)
         classes.write(line)
     classes.close()
 

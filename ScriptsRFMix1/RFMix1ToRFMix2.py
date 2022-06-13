@@ -62,6 +62,10 @@ def createClassesPerSetDict(set, classes, mappingDict, first, last, XList):
                 if anc not in pops:
                     pops.append(anc)
 
+        if not XList:
+            for ind in indList:
+                XDict[ind] = "D"
+
 
     print('\tAll dicts were created')
 

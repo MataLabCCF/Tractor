@@ -29,8 +29,10 @@ def printDiploid(ind, indClass, firstInd):
     if not firstInd:
         lineReturn = ' '
     if ind not in indClass:
+        print(f"{ind} has no class ")
         lineReturn = lineReturn + "0 0"
     else:
+        print(f"{ind} is class {indClass[ind]}")
         lineReturn = lineReturn + f'{indClass[ind]} {indClass[ind]}'
 
     return lineReturn, False
@@ -51,9 +53,9 @@ def printClassFile(fileName, indClass, chrX, callList, chrXFileName):
                 line, firstInd = printDiploid(ind, indClass, firstInd)
                 XList.write(f'{ind}\tD\n')
         else:
-            if ind not in indClass:
-                line, firstInd = printDiploid(ind, indClass, firstInd)
+            line, firstInd = printDiploid(ind, indClass, firstInd)
         classes.write(line)
+        
     classes.close()
 
 def createBin(vcf, genmap, output, chrom):

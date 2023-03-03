@@ -58,12 +58,12 @@ def printClassFile(fileName, indClass, chrX, callList, chrXFileName):
         
     classes.close()
 
-def createBin(vcf, genmap, output, chrom):
+def createBin(vcf, genmap, output, chrom, plink):
     if genmap[-3:] == '.gz':
         command = f'cp {genmap} ./GenMap{chrom}.gz | gunzip ./GenMap{chrom}.gz'
         execute(command)
         genmap = f'./GenMap{chrom}'
-    command = f'plink --vcf {vcf} --cm-map {genmap} {chrom} --make-bed --out {output}_gen --double-id'
+    command = f'{plink} --vcf {vcf} --cm-map {genmap} {chrom} --make-bed --out {output}_gen --double-id'
     execute(command)
     return f'{output}_gen.bim'
 
@@ -81,6 +81,7 @@ if __name__ == '__main__':
     required.add_argument('-c', '--correspondence', help='Correspondence between parental and IDs', required=True)
     required.add_argument('-C', '--chromosome', help='It is self-explanatory ', required=True)
     required.add_argument('-o', '--output', help='Output name file', required=True)
+    required.add_argument('-p', '--plink', help='PLINK path', required=True)
     required.add_argument('-m', '--map', help='Genetic map', required=False)
 
     optional = parser.add_argument_group("Optional arguments")
@@ -104,7 +105,7 @@ if __name__ == '__main__':
             popDict[split[1]] = numParental
         indClass[split[0]] = popDict[split[1]]
     
-    bim = createBin(args.vcf, args.map, args.output, args.chromosome)
+    bim = createBin(args.vcf, args.map, args.output, args.chromosome, args.plink)
     
     print(f'Abrindo o {bim}')
     mapFile = open(f'{bim}')
